@@ -31,16 +31,32 @@ Before touching a site, confirm in one line: whose account this is, what the sin
 ### 2. Check for an existing recipe
 Look in the working directory (or wherever the user keeps them) for a `*.recipe.json` file whose `target.origin` and `target.path_pattern` (see `schema/recipe.schema.json`) match the site and action. If one exists and hasn't failed its last few runs, skip to step 5 (Execute).
 
-### 3. Discover
-Perform the action **once**, using whatever browser tooling is available in this session, while paying attention to:
-- **Network calls** (the site's own XHR/fetch/GraphQL requests) — this is the preferred discovery outcome. If the site's frontend calls a clean, parameterizable backend endpoint to do the thing, that's what the recipe should replay directly (`kind: "api"` in the schema) — faster, more deterministic, and it never touches the DOM again.
-- **DOM steps**, only if no clean request exists (heavily obfuscated/signed payloads, or a genuinely UI-only flow). Record the minimal ordered sequence of typed actions (`kind: "dom"`) — navigate, click, fill, select, wait_for, extract — using accessible names/roles/stable selectors, never pixel coordinates.
-- **Any interruption** (login, CAPTCHA, OTP, WebAuthn/passkey, payment challenge) — record it as a named `human_handoff` state in the recipe (see schema), not as something to script through.
+### 3. Discover — use `discover.py`, don't hand-transcribe network traffic
+Don't manually read screenshots/network tabs and type out a recipe from memory. Use the capture tool, and **run the same flow twice with two different concrete inputs** (two different dates, search terms, ids — whatever the action's real parameter is). Diffing two real examples is what reliably tells you which parts of a request are the fixed template and which parts vary; guessing that from a single capture is unreliable and is exactly the kind of hand-authoring this tool exists to avoid.
 
-### 4. Compile the recipe
-Write a `<name>.recipe.json` conforming to `schema/recipe.schema.json`. Keep it strictly declarative — no code fields, no free-text fields that a future agent run would read back as instructions. If the schema can't express something the task needs, that's a signal to simplify the task, not to add an escape hatch to the schema.
+```
+python skills/site-recipe/interpreter/discover.py https://example.com/start --out run1.json
+# ... perform the action once in the browser window that opens, e.g. with input "cat" ...
+python skills/site-recipe/interpreter/discover.py https://example.com/start --out run2.json
+# ... perform the same action again with a different input, e.g. "dog" ...
+```
+This captures the site's own XHR/fetch calls (filtered clear of analytics/tracking noise), with anything credential-shaped redacted before it ever touches disk — both in headers and in the response body, in case the site echoes a token back.
 
-Validate it before saving:
+If no clean request exists at all (heavily obfuscated/signed payloads, or a genuinely UI-only flow), fall back to recording the minimal ordered sequence of typed DOM actions by hand (`kind: "dom"` in the schema) — navigate, click, fill, select, wait_for, extract — using accessible names/roles, never pixel coordinates.
+
+Either way, note **any interruption** (login, CAPTCHA, OTP, WebAuthn/passkey, payment challenge) as a named `human_handoff` state in the recipe — never as something to script through.
+
+### 4. Compile the recipe — use `capture_to_recipe.py`, don't write JSON from scratch
+```
+python skills/site-recipe/interpreter/capture_to_recipe.py --captures run1.json run2.json
+# prints a ranked shortlist of which captured request is probably "the action"
+python skills/site-recipe/interpreter/capture_to_recipe.py --captures run1.json run2.json --pick 0 --name my-recipe --out my-recipe.json
+```
+This diffs the two captures and drafts a `schema/recipe.schema.json`-valid recipe automatically: the field that changed between "cat" and "dog" becomes `{{a_param}}`, everything constant stays literal, and anything credential-shaped becomes a `credential_ref`. **The draft always comes out `needs_review` with `extract` left empty on purpose** — deciding which response fields actually matter still takes a human or Claude looking at the real response once. That's the one part of this that's still worth your judgment; everything before it shouldn't be.
+
+If a task can't produce a clean two-example diff (steps look identical because the varying part didn't show up in the network layer, or the request shapes genuinely differ across runs), write the recipe by hand instead. Keep it strictly declarative either way — no code fields, no free-text fields a future agent run would read back as instructions.
+
+Validate before trusting it:
 ```
 python skills/site-recipe/interpreter/run_recipe.py --validate-only path/to/thing.recipe.json
 ```
@@ -62,6 +78,8 @@ Tell the user what happened in plain terms (succeeded / needs the human for X / 
 ## Files in this skill
 
 - `schema/recipe.schema.json` — the recipe format. Read this before writing a recipe by hand.
+- `interpreter/discover.py` — captures a site's real network calls during one pass through a flow. Run it twice with different inputs; see step 3.
+- `interpreter/capture_to_recipe.py` — diffs two (or more) captures and drafts a recipe automatically; see step 4.
 - `interpreter/run_recipe.py` — validates and executes a recipe.
 - `interpreter/stealth_fetch.py` — the DOM-fallback browser helper (Patchright-based). Optional dependency; only needed for `kind: "dom"` recipes.
 - `docs/LEGAL-NOTES.md` — the reasoning behind the hard rules above. Not legal advice; read it, don't cite it as legal advice to anyone.
