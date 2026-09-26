@@ -21,7 +21,14 @@ NOISE_DOMAINS = (
     "facebook.net", "connect.facebook.net", "segment.io", "sentry.io",
     "hotjar.com", "fullstory.com", "intercom.io", "amplitude.com", "mixpanel.com",
     "cookielaw.org", "cloudflareinsights.com", "bat.bing.com",
+    "google.com", "googleadservices.com", "analytics.google.com",
+    "clarity.ms", "sharethis.com", "m.stripe.com", "bzr.openai.com", "bzrcdn.openai.com",
+    "dfp.calendly.com",
 )
+# Path shapes that are almost always telemetry even on a first-party/API-looking
+# domain -- real Calendly traffic taught us this: calendly.com itself fires an
+# /api/booking/analytics/track call alongside the actual availability lookup.
+NOISE_PATH_MARKERS = ("/collect", "/track", "/analytics", "/pixel", "/rmkt", "/beacon")
 
 
 def redact_headers(headers: dict) -> dict:
@@ -32,11 +39,20 @@ def redact_headers(headers: dict) -> dict:
 
 
 def is_noise(url: str) -> bool:
-    host = urlsplit(url).netloc
-    return any(d in host for d in NOISE_DOMAINS)
+    parts = urlsplit(url)
+    if any(d in parts.netloc for d in NOISE_DOMAINS):
+        return True
+    return any(m in parts.path for m in NOISE_PATH_MARKERS)
 
 
-def _safe_request_body(post_data):
+def _safe_post_data(req):
+    """req.post_data itself can raise (e.g. a gzip/binary/protobuf body that
+    Playwright can't utf-8-decode) -- guard the property access, not just what
+    we do with the result."""
+    try:
+        post_data = req.post_data
+    except Exception:
+        return "<unrepresentable binary body>"
     if not post_data:
         return None
     try:
@@ -85,21 +101,27 @@ def capture(start_url, out_path, headless, auto_actions_path, settle_seconds, no
             return
         if is_noise(req.url):
             return
-        raw_headers = req.headers
-        secret_values = [
-            v for k, v in raw_headers.items()
-            if any(m in k.lower() for m in SENSITIVE_HEADER_MARKERS) and v
-        ]
-        captured.append({
-            "method": req.method,
-            "url": req.url,
-            "resource_type": req.resource_type,
-            "request_headers": redact_headers(raw_headers),
-            "request_body": _scrub(_safe_request_body(req.post_data), secret_values),
-            "status": response.status,
-            "response_body": _scrub(_safe_response_body(response), secret_values),
-            "t": time.time(),
-        })
+        try:
+            raw_headers = req.headers
+            secret_values = [
+                v for k, v in raw_headers.items()
+                if any(m in k.lower() for m in SENSITIVE_HEADER_MARKERS) and v
+            ]
+            captured.append({
+                "method": req.method,
+                "url": req.url,
+                "resource_type": req.resource_type,
+                "request_headers": redact_headers(raw_headers),
+                "request_body": _scrub(_safe_post_data(req), secret_values),
+                "status": response.status,
+                "response_body": _scrub(_safe_response_body(response), secret_values),
+                "t": time.time(),
+            })
+        except Exception as e:
+            # A single malformed/binary request (gzip bodies, protobuf, a closed
+            # page racing the response, etc.) must never take down the whole
+            # capture session -- note it and keep going.
+            print(f"[discover] warning: skipped one response ({req.url}): {e}")
 
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as p:

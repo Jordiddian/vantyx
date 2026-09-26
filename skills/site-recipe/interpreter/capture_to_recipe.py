@@ -24,17 +24,28 @@ def load_captures(paths):
 
 
 def rank_candidates(entries):
+    """Heuristic only -- a first pass to shrink a real page's ~50 requests down to a
+    short list a human/Claude can glance at, not a claim of knowing "the" answer.
+    Real-world lesson (see git history): don't penalize GET -- read-only
+    availability/lookup calls are very often GET, not POST; the earlier version of
+    this scored real Calendly availability calls below Stripe/Clarity/GA beacons."""
     def score(e):
         s = 0
-        if e["method"] != "GET":
-            s += 2
         if e.get("response_body") is not None:
             s += 2
         if e.get("request_body") is not None:
             s += 1
+        path = urlsplit(e["url"]).path
+        if any(seg in path for seg in ("/range", "/availability", "/available", "/slots", "/search", "/lookup")):
+            s += 2
         return s
 
     return sorted(range(len(entries)), key=lambda i: score(entries[i]), reverse=True)
+
+
+def find_by_url_substring(entries, substring):
+    matches = [i for i, e in enumerate(entries) if substring in e["url"]]
+    return matches
 
 
 def _diff_scalar(values):
@@ -90,8 +101,7 @@ def build_url_template(origin, path_template, query_template):
     return f"{origin}{path_template}?{qs}"
 
 
-def draft_recipe(name, entries_by_capture, pick_index):
-    picked = [entries[pick_index] for entries in entries_by_capture]
+def draft_recipe(name, picked):
     urls = [e["url"] for e in picked]
     origin, path_template, query_template, detected_params = diff_urls(urls)
     url_template = build_url_template(origin, path_template, query_template)
@@ -139,27 +149,44 @@ def draft_recipe(name, entries_by_capture, pick_index):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--captures", nargs="+", required=True, help=">=1 capture.json files from discover.py; 2+ enables diffing")
-    ap.add_argument("--pick", type=int, help="Index into the first capture's request list to compile. Omit to see a ranked shortlist first.")
+    ap.add_argument("--pick", type=int, help="Index into the first capture's request list to compile (requires all captures to have identical entry counts/order). Omit to see a ranked shortlist first.")
+    ap.add_argument("--pick-url-contains", help="Instead of a fixed index, pick the first request whose URL contains this substring, independently in each capture file. More robust when captures pick up different numbers of ads/analytics calls.")
     ap.add_argument("--name", default="draft-recipe")
     ap.add_argument("--out", default="draft.recipe.json")
     args = ap.parse_args()
 
     captures = load_captures(args.captures)
 
-    if args.pick is None:
+    if args.pick is None and args.pick_url_contains is None:
         ranked = rank_candidates(captures[0])
         print("Ranked candidates (most-likely-the-real-action first):")
         for rank, idx in enumerate(ranked[:15]):
             e = captures[0][idx]
             print(f"  [{idx}] {e['method']} {e['url']} -> {e['status']}")
-        print("\nRe-run with --pick <index> to compile that one.")
+        print("\nRe-run with --pick <index>, or --pick-url-contains <substring>, to compile that one.")
         return
 
-    if len({len(c) for c in captures}) != 1:
-        sys.exit("All capture files need the same number of entries in the same order "
-                 "(run discover.py the same way, same number of steps, each time).")
+    if args.pick_url_contains:
+        picked = []
+        for cap_path, entries in zip(args.captures, captures):
+            matches = find_by_url_substring(entries, args.pick_url_contains)
+            if not matches:
+                sys.exit(f"No request in {cap_path} contains {args.pick_url_contains!r}")
+            if len(matches) > 1:
+                # Real-world lesson: a page-load default call (e.g. current month's
+                # availability) often fires before the interaction we actually
+                # care about; the LAST match is what the interaction produced, not
+                # whatever loaded first.
+                print(f"Note: {len(matches)} matches in {cap_path}, using the last (most likely reflects the actual interaction, not the page's default load)")
+            picked.append(entries[matches[-1]])
+    else:
+        if len({len(c) for c in captures}) != 1:
+            sys.exit("All capture files need the same number of entries in the same order "
+                     "(run discover.py the same way, same number of steps, each time) "
+                     "-- or use --pick-url-contains instead, which doesn't require that.")
+        picked = [entries[args.pick] for entries in captures]
 
-    recipe = draft_recipe(args.name, captures, args.pick)
+    recipe = draft_recipe(args.name, picked)
     Path(args.out).write_text(json.dumps(recipe, indent=2))
     print(f"Draft written to {args.out}. It is NOT ready to run yet:")
     print("  - metadata.status is 'needs_review'")
