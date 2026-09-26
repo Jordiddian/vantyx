@@ -1,10 +1,10 @@
-# vantyx / site-recipe
+# vantyx
 
 A Claude Code skill: turn a repeated action on a website that has no public API into a
 small, declarative, reusable "recipe" — discovered once, replayed directly afterward —
 instead of re-doing screenshot-driven browser automation every time.
 
-**Start here:** [`skills/site-recipe/SKILL.md`](skills/site-recipe/SKILL.md)
+**Start here:** [`skills/vantyx/SKILL.md`](skills/vantyx/SKILL.md)
 
 ## What this is, and isn't
 
@@ -18,7 +18,7 @@ decision.
 ## Layout
 
 ```
-skills/site-recipe/
+skills/vantyx/
   SKILL.md                       -- the workflow Claude follows
   schema/recipe.schema.json      -- the declarative recipe format (no code fields)
   interpreter/discover.py        -- captures a site's real network calls (Playwright/Patchright)
@@ -32,7 +32,7 @@ skills/site-recipe/
 ## Setup
 
 ```bash
-pip install -r skills/site-recipe/requirements.txt
+pip install -r skills/vantyx/requirements.txt
 pip install playwright && playwright install chromium   # needed for discover.py
 # Optional, only if a recipe needs the DOM fallback at replay time:
 pip install patchright && patchright install chromium
@@ -42,13 +42,13 @@ pip install patchright && patchright install chromium
 
 Run the same flow twice with two different concrete inputs, then compile:
 ```bash
-python skills/site-recipe/interpreter/discover.py https://example.com/start --out run1.json
+python skills/vantyx/interpreter/discover.py https://example.com/start --out run1.json
 # perform the action once, e.g. with input "cat"
-python skills/site-recipe/interpreter/discover.py https://example.com/start --out run2.json
+python skills/vantyx/interpreter/discover.py https://example.com/start --out run2.json
 # perform the same action again with input "dog"
-python skills/site-recipe/interpreter/capture_to_recipe.py --captures run1.json run2.json
+python skills/vantyx/interpreter/capture_to_recipe.py --captures run1.json run2.json
 # shows a ranked shortlist of which captured request is probably "the action"
-python skills/site-recipe/interpreter/capture_to_recipe.py --captures run1.json run2.json --pick 0 --out my-recipe.json
+python skills/vantyx/interpreter/capture_to_recipe.py --captures run1.json run2.json --pick 0 --out my-recipe.json
 # writes a schema-valid draft: "cat"/"dog" becomes {{a_param}}, constants stay literal,
 # anything credential-shaped becomes credential_ref. Status is always "needs_review" --
 # fill in `extract` (which response fields you care about), then validate and run.

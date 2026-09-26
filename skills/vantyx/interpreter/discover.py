@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
-PROFILE_DIR = Path.home() / ".site-recipe" / "browser-profile"
+PROFILE_DIR = Path.home() / ".vantyx" / "browser-profile"
 
 SENSITIVE_HEADER_MARKERS = ("cookie", "authorization", "token", "secret", "key", "csrf")
 NOISE_DOMAINS = (

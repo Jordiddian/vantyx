@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://example.invalid/site-recipe/recipe.schema.json",
-  "title": "site-recipe recipe",
+  "$id": "https://example.invalid/vantyx/recipe.schema.json",
+  "title": "vantyx recipe",
   "description": "A declarative, non-Turing-complete description of one repeatable action on one site. No code, no eval, no free-text fields meant to be read as instructions by an agent.",
   "type": "object",
   "additionalProperties": false,

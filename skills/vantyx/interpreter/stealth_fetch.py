@@ -1,4 +1,4 @@
-"""DOM-fallback browser helper for site-recipe, built on Patchright.
+"""DOM-fallback browser helper for vantyx, built on Patchright.
 
 Only used when a recipe's `kind` is "dom" (no clean API call could be found during
 discovery). This drives a real, non-headless Chromium profile.
@@ -11,7 +11,7 @@ Honest limits, read before relying on this:
 - It must never be pointed at a CAPTCHA or a payment-challenge step. Those are
   handled exclusively through the human_handoff pause below -- the human completes
   them in the same visible window, and this code just waits and re-checks state.
-- It uses a dedicated persistent profile directory (~/.site-recipe/browser-profile),
+- It uses a dedicated persistent profile directory (~/.vantyx/browser-profile),
   not your everyday Chrome profile -- recent Chrome versions block remote-debugging
   access to the default profile, and mixing automation into your daily browsing
   profile is a bad idea regardless.
@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
-PROFILE_DIR = Path.home() / ".site-recipe" / "browser-profile"
+PROFILE_DIR = Path.home() / ".vantyx" / "browser-profile"
 
 
 class DomError(Exception):
@@ -108,7 +108,7 @@ def _try_human_handoff(page, human_handoff) -> bool:
     is satisfied first."""
     if not human_handoff:
         return False
-    print("\n[site-recipe] Needs you -- one of these is probably what's on screen:")
+    print("\n[vantyx] Needs you -- one of these is probably what's on screen:")
     for entry in human_handoff:
         print(f"  - {entry['prompt']}")
     print("Finish whichever applies in the browser window that's open, then press Enter here...")

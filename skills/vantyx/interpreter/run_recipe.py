@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate and execute a site-recipe recipe. See ../SKILL.md for the workflow this belongs to."""
+"""Validate and execute a vantyx recipe. See ../SKILL.md for the workflow this belongs to."""
 import argparse
 import json
 import os
@@ -21,7 +21,7 @@ except ImportError:
     requests = None  # only required for kind == "api"
 
 SCHEMA_PATH = Path(__file__).parent.parent / "schema" / "recipe.schema.json"
-STATE_DIR = Path.home() / ".site-recipe" / "state"
+STATE_DIR = Path.home() / ".vantyx" / "state"
 TEMPLATE_RE = re.compile(r"\{\{(\w+)\}\}")
 
 
@@ -56,7 +56,7 @@ def assert_allowed_origin(url: str, allowed_origins: list[str]):
 
 
 def _resolve_one_credential(ref_name: str) -> str:
-    env_name = "SITE_RECIPE_CRED_" + ref_name.upper()
+    env_name = "VANTYX_CRED_" + ref_name.upper()
     value = os.environ.get(env_name)
     if value is None:
         raise RecipeError(

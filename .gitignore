@@ -5,4 +5,4 @@ venv/
 node_modules/
 .env
 *.recipe.json.local
-/.site-recipe/
+/.vantyx/
