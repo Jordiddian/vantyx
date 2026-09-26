@@ -1,0 +1,7 @@
+{
+  "name": "site-recipe",
+  "description": "Turn a repeated action on a website with no public API into a small, declarative, reusable recipe instead of re-doing screenshot-driven browser automation every time.",
+  "author": {
+    "name": "Jordan Tabibian"
+  }
+}

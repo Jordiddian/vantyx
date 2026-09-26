@@ -1,0 +1,4 @@
+jsonschema>=4.0
+requests>=2.31
+# Optional, only needed for kind="dom" recipes (the browser fallback path):
+# patchright>=1.60

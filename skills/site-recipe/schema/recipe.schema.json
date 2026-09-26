@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/site-recipe/recipe.schema.json",
+  "title": "site-recipe recipe",
+  "description": "A declarative, non-Turing-complete description of one repeatable action on one site. No code, no eval, no free-text fields meant to be read as instructions by an agent.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "version", "kind", "target", "capability_manifest", "params"],
+  "properties": {
+    "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$" },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "description": { "type": "string", "maxLength": 280 },
+    "kind": { "type": "string", "enum": ["api", "dom"] },
+
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["origin", "path_pattern"],
+      "properties": {
+        "origin": { "type": "string", "format": "uri", "description": "Scheme+host only, e.g. https://example.com" },
+        "path_pattern": { "type": "string", "description": "URL path template this recipe applies to, e.g. /booking/{location_id}" }
+      }
+    },
+
+    "capability_manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed_origins", "max_steps", "timeout_seconds", "rate_limit"],
+      "properties": {
+        "allowed_origins": {
+          "type": "array",
+          "items": { "type": "string", "format": "uri" },
+          "minItems": 1,
+          "description": "Every request/navigation the recipe makes must match one of these origins exactly. The interpreter enforces this; it is not advisory."
+        },
+        "max_steps": { "type": "integer", "minimum": 1, "maximum": 50 },
+        "timeout_seconds": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "rate_limit": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["max_calls", "per_seconds"],
+          "properties": {
+            "max_calls": { "type": "integer", "minimum": 1 },
+            "per_seconds": { "type": "integer", "minimum": 1 }
+          }
+        }
+      }
+    },
+
+    "params": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "type", "required"],
+        "properties": {
+          "name": { "type": "string", "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$" },
+          "type": { "type": "string", "enum": ["string", "number", "boolean", "date", "enum"] },
+          "enum_values": { "type": "array", "items": { "type": "string" } },
+          "required": { "type": "boolean" },
+          "description": { "type": "string", "maxLength": 200 }
+        }
+      }
+    },
+
+    "credential_ref": {
+      "type": "string",
+      "description": "A name the interpreter resolves locally at run time (e.g. from the user's browser session or environment). Never a literal secret value."
+    },
+
+    "request": {
+      "type": "object",
+      "description": "Required when kind == api.",
+      "additionalProperties": false,
+      "properties": {
+        "method": { "type": "string", "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"] },
+        "url_template": { "type": "string" },
+        "headers": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Values may reference {{param_name}} or {{credential}}; no other templating is permitted."
+        },
+        "body_template": {
+          "type": ["object", "null"],
+          "additionalProperties": true
+        }
+      }
+    },
+
+    "steps": {
+      "type": "array",
+      "description": "Required when kind == dom. Ordered list of typed actions.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["action"],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["navigate", "click", "fill", "select", "wait_for", "extract_text", "extract_attr"]
+          },
+          "target_role": { "type": "string", "description": "Accessible role, e.g. 'button', 'textbox'." },
+          "target_name": { "type": "string", "description": "Accessible name/label to match, e.g. 'Party size'." },
+          "value_param": { "type": "string", "description": "Name of a declared param whose value to use, for fill/select." },
+          "url_param": { "type": "string", "description": "Name of a declared param to build a navigate URL from, for navigate." },
+          "extract_as": { "type": "string", "description": "Name to store an extracted value under, for extract_text/extract_attr." },
+          "attr_name": { "type": "string", "description": "Attribute name, for extract_attr." },
+          "timeout_seconds": { "type": "integer", "minimum": 1, "maximum": 30 }
+        }
+      }
+    },
+
+    "extract": {
+      "type": "array",
+      "description": "For kind == api: where to pull fields out of the response.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "from", "path"],
+        "properties": {
+          "name": { "type": "string" },
+          "from": { "type": "string", "enum": ["json", "header", "status"] },
+          "path": { "type": "string" }
+        }
+      }
+    },
+
+    "preconditions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/condition" }
+    },
+    "postconditions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/condition" }
+    },
+
+    "human_handoff": {
+      "type": "array",
+      "description": "Named interruption states this recipe may hit. The interpreter pauses on these; it never attempts to satisfy them itself.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "prompt", "resume_condition"],
+        "properties": {
+          "kind": { "type": "string", "enum": ["captcha", "otp", "webauthn", "payment_challenge", "login", "other"] },
+          "prompt": { "type": "string", "maxLength": 300 },
+          "timeout_seconds": { "type": "integer", "minimum": 10, "maximum": 900 },
+          "resume_condition": { "$ref": "#/$defs/condition" }
+        }
+      }
+    },
+
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "created_at": { "type": "string", "format": "date-time" },
+        "last_success_at": { "type": "string", "format": "date-time" },
+        "recent_failures": { "type": "integer", "minimum": 0 },
+        "status": { "type": "string", "enum": ["active", "needs_review", "stale"] }
+      }
+    }
+  },
+
+  "$defs": {
+    "condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "op", "value"],
+      "properties": {
+        "field": { "type": "string" },
+        "op": { "type": "string", "enum": ["eq", "neq", "gt", "lt", "contains", "exists"] },
+        "value": {}
+      }
+    }
+  }
+}

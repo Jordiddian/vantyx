@@ -1,0 +1,35 @@
+{
+  "name": "example-status-check",
+  "version": "0.1.0",
+  "description": "Placeholder example showing the recipe shape. Not a real target -- replace example.invalid with an actual site before use.",
+  "kind": "api",
+  "target": {
+    "origin": "https://example.invalid",
+    "path_pattern": "/status/{item_id}"
+  },
+  "capability_manifest": {
+    "allowed_origins": ["https://example.invalid"],
+    "max_steps": 1,
+    "timeout_seconds": 10,
+    "rate_limit": { "max_calls": 6, "per_seconds": 60 }
+  },
+  "params": [
+    { "name": "item_id", "type": "string", "required": true, "description": "Item to check the status of." }
+  ],
+  "request": {
+    "method": "GET",
+    "url_template": "https://example.invalid/api/status/{{item_id}}",
+    "headers": { "Accept": "application/json" }
+  },
+  "extract": [
+    { "name": "status", "from": "json", "path": "status" },
+    { "name": "http_status", "from": "status", "path": "" }
+  ],
+  "postconditions": [
+    { "field": "http_status", "op": "eq", "value": 200 }
+  ],
+  "metadata": {
+    "status": "active",
+    "recent_failures": 0
+  }
+}
