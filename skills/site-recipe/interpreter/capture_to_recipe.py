@@ -111,14 +111,32 @@ def draft_recipe(name, picked):
         for pname in detected_params
     ]
 
-    credential_ref = None
+    # A real request can need more than one distinct secret (a session cookie AND a
+    # separate CSRF token, say -- exactly what a real capture turned up). Collapsing
+    # every redacted header into the same {{credential}} placeholder would silently
+    # send the wrong value in at least one of them, with no error to catch it.
+    redacted_headers = [k for k, v in picked[0]["request_headers"].items() if v == "<redacted>"]
+    placeholder_of = {}
+    if len(redacted_headers) == 1:
+        placeholder_of[redacted_headers[0]] = "credential"
+    else:
+        for i, k in enumerate(redacted_headers, start=1):
+            placeholder_of[k] = "credential" if i == 1 else f"credential_{i}"
+
     clean_headers = {}
     for k, v in picked[0]["request_headers"].items():
-        if v == "<redacted>":
-            credential_ref = credential_ref or k.lower().replace("-", "_")
-            clean_headers[k] = "{{credential}}"
+        if k in placeholder_of:
+            clean_headers[k] = "{{" + placeholder_of[k] + "}}"
         elif k.lower() not in ("host", "content-length"):
             clean_headers[k] = v
+
+    credential_ref = None
+    if len(redacted_headers) == 1:
+        credential_ref = redacted_headers[0].lower().replace("-", "_")
+    elif len(redacted_headers) > 1:
+        credential_ref = {
+            placeholder_of[k]: k.lower().replace("-", "_") for k in redacted_headers
+        }
 
     recipe = {
         "name": name,
@@ -139,6 +157,12 @@ def draft_recipe(name, picked):
             "headers": clean_headers,
         },
         "extract": [],
+        # Default safety net: without this, a recipe with no extract/postconditions
+        # would report "success" on a 404/500 exactly as happily as a 200 -- run_recipe.py's
+        # "status" field is always populated even when extract is empty. Expand or replace
+        # this once you know what a real success response actually looks like; don't delete
+        # it without replacing it.
+        "postconditions": [{"field": "status", "op": "eq", "value": 200}],
         "metadata": {"status": "needs_review", "recent_failures": 0},
     }
     if credential_ref:

@@ -64,8 +64,11 @@
     },
 
     "credential_ref": {
-      "type": "string",
-      "description": "A name the interpreter resolves locally at run time (e.g. from the user's browser session or environment). Never a literal secret value."
+      "oneOf": [
+        { "type": "string" },
+        { "type": "object", "additionalProperties": { "type": "string" }, "minProperties": 1 }
+      ],
+      "description": "A name the interpreter resolves locally at run time (e.g. from the user's browser session or environment). Never a literal secret value. String form resolves to the single {{credential}} placeholder; use the object form ({\"placeholder_name\": \"ref_name\"}) when a request needs more than one distinct secret (e.g. a session cookie AND a separate CSRF token) so they don't collide."
     },
 
     "request": {
@@ -99,6 +102,7 @@
             "type": "string",
             "enum": ["navigate", "click", "fill", "select", "wait_for", "extract_text", "extract_attr"]
           },
+          "target_frame": { "type": "string", "description": "CSS selector for an iframe to operate inside (e.g. \"iframe[src*='calendly.com']\"), for widgets embedded via iframe -- very common on real small-business booking pages. Omit to target the top-level page." },
           "target_role": { "type": "string", "description": "Accessible role, e.g. 'button', 'textbox'." },
           "target_name": { "type": "string", "description": "Accessible name/label to match, e.g. 'Party size'." },
           "value_param": { "type": "string", "description": "Name of a declared param whose value to use, for fill/select." },

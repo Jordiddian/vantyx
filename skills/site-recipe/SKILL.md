@@ -42,7 +42,7 @@ python skills/site-recipe/interpreter/discover.py https://example.com/start --ou
 ```
 This captures the site's own XHR/fetch calls (filtered clear of analytics/tracking noise), with anything credential-shaped redacted before it ever touches disk — both in headers and in the response body, in case the site echoes a token back.
 
-If no clean request exists at all (heavily obfuscated/signed payloads, or a genuinely UI-only flow), fall back to recording the minimal ordered sequence of typed DOM actions by hand (`kind: "dom"` in the schema) — navigate, click, fill, select, wait_for, extract — using accessible names/roles, never pixel coordinates.
+If no clean request exists at all (heavily obfuscated/signed payloads, or a genuinely UI-only flow), fall back to recording the minimal ordered sequence of typed DOM actions by hand (`kind: "dom"` in the schema) — navigate, click, fill, select, wait_for, extract — using accessible names/roles, never pixel coordinates. If the interactive part lives inside an iframe (very common — most embedded booking widgets, e.g. Calendly, are iframes), set a step's `target_frame` to a CSS selector for that iframe (e.g. `"iframe[src*='calendly.com']"`); omit it to target the top-level page.
 
 Either way, note **any interruption** (login, CAPTCHA, OTP, WebAuthn/passkey, payment challenge) as a named `human_handoff` state in the recipe — never as something to script through.
 
@@ -53,7 +53,7 @@ python skills/site-recipe/interpreter/capture_to_recipe.py --captures run1.json 
 python skills/site-recipe/interpreter/capture_to_recipe.py --captures run1.json run2.json --pick 0 --name my-recipe --out my-recipe.json
 ```
 Real sites are noisy (a single page load easily fires 40-50 xhr/fetch calls once you count analytics/ads/trackers). Use `--captures ... ` alone first to see a ranked shortlist, or if you already know a URL fragment that identifies the right call (e.g. `"calendar/range"`, `"/search"`), use `--pick-url-contains <substring>` instead of `--pick <index>` — it matches independently in each capture file, so it doesn't break when different runs happen to pick up different numbers of third-party beacons. When a URL fragment matches more than once in a capture (a page-load default call plus one from the actual interaction), the *last* match is used, since that's the one that reflects what you actually did, not what loaded by default.
-This diffs the two captures and drafts a `schema/recipe.schema.json`-valid recipe automatically: the field that changed between "cat" and "dog" becomes `{{a_param}}`, everything constant stays literal, and anything credential-shaped becomes a `credential_ref`. **The draft always comes out `needs_review` with `extract` left empty on purpose** — deciding which response fields actually matter still takes a human or Claude looking at the real response once. That's the one part of this that's still worth your judgment; everything before it shouldn't be.
+This diffs the two captures and drafts a `schema/recipe.schema.json`-valid recipe automatically: the field that changed between "cat" and "dog" becomes `{{a_param}}`, everything constant stays literal, and anything credential-shaped becomes a `credential_ref` (if the request needs more than one distinct secret — e.g. a session cookie *and* a separate CSRF token, which is completely normal — each gets its own placeholder, `{{credential}}`/`{{credential_2}}`/..., not collapsed into one). A default `postconditions: [{"field": "status", "op": "eq", "value": 200}]` is included so the draft isn't blind to failure before you've added anything else — expand or replace it once you know what a real success response looks like, don't just delete it. **The draft always comes out `needs_review` with `extract` left empty on purpose** — deciding which response fields actually matter still takes a human or Claude looking at the real response once. That's the one part of this that's still worth your judgment; everything before it shouldn't be.
 
 If a task can't produce a clean two-example diff (steps look identical because the varying part didn't show up in the network layer, or the request shapes genuinely differ across runs), write the recipe by hand instead. Keep it strictly declarative either way — no code fields, no free-text fields a future agent run would read back as instructions.
 
@@ -67,11 +67,15 @@ python skills/site-recipe/interpreter/run_recipe.py --validate-only path/to/thin
 python skills/site-recipe/interpreter/run_recipe.py path/to/thing.recipe.json --param key=value ...
 ```
 The interpreter (see `interpreter/run_recipe.py`):
-- Refuses to run if the recipe references an origin outside its own declared `capability_manifest.allowed_origins`.
-- Applies the recipe's rate limit itself (don't rely on the caller to remember).
+- Refuses to run if the recipe references an origin outside its own declared `capability_manifest.allowed_origins` — for `kind: "dom"`, this is checked after *every* step, not just `navigate`, since a click can trigger off-site navigation just as easily.
+- Validates declared param types before doing anything else (an `enum` param with a value outside `enum_values` is refused up front, not sent to the site).
+- Applies the recipe's rate limit itself (don't rely on the caller to remember), keyed on name+origin so two unrelated recipes that happen to share a name can't share a rate-limit budget.
 - For `kind: "api"` recipes, resolves credentials from the environment/local browser session at call time — never from the recipe file.
 - For `kind: "dom"` recipes, falls back to a real (non-headless) browser via the `stealth_fetch` helper, which is best-effort only (see its docstring) — it is not a guarantee against bot detection, and it must never be pointed at a CAPTCHA or payment step.
-- On hitting a declared `human_handoff` state, pauses and tells the user what to do in their own browser window, then re-checks the recipe's postcondition before resuming — never guesses that the human finished.
+- On hitting a declared `human_handoff` state, pauses and tells the user what to do in their own browser window, then re-checks the recipe's postcondition before resuming — never guesses that the human finished. If more than one interruption type is declared, it shows all of them (a timeout doesn't tell you *which* one actually happened) and accepts whichever resume condition is satisfied first.
+- **Any failure — a bad postcondition, a network error, a timeout, anything — is recorded toward the recipe's staleness count**, not just a clean postcondition mismatch. Three recent failures flips `metadata.status` to `needs_review`.
+
+**Known limitation, not yet solved:** a credential that's minted fresh per page load (a dynamic CSRF token, not a stable session cookie) can't be supplied by the current `credential_ref`/environment-variable model, which assumes a stable secret set once. A recipe needing one of these either needs a priming/bootstrap step (not built) or should stay `kind: "dom"`, where a real browser session carries it naturally.
 
 ### 6. Report and save
 Tell the user what happened in plain terms (succeeded / needs the human for X / site rejected the request — recipe may be stale). If a recipe's success rate drops, mark it stale in its own metadata rather than silently continuing to trust it.
